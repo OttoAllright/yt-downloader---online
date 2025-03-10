@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { useTranslation } from 'react-i18next';
-import "./App.css"; // Importamos el archivo CSS
-import './config.js/i18n.js'; // Importa la configuración de i18next
+import "./App.css"; 
+import './config/i18n.js'; 
+
+const URL = 'http://localhost:3000';
 
 const App = () => {
   const { t } = useTranslation();
@@ -15,36 +17,55 @@ const App = () => {
       return;
     }
 
-    setLoading(true);
-    setError("");
+    try {
+      setLoading(true);
+      setError("");
 
-    const endpoint = type === "audio" ? "audio" : "video";
+      const endpoint = type === "audio" ? "audio" : "video";
+      console.log(`Iniciando descarga de ${endpoint}...`);
 
-    const response = await fetch(`http://localhost:3000/download/${endpoint}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ url }),
-    });
+      const response = await fetch(`${URL}/download/${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url }),
+      });
 
-    const blob = await response.blob();
-    const contentDisposition = response.headers.get("Content-Disposition");
-    const fileName = contentDisposition
-      ? contentDisposition.split("filename=")[1].replace(/"/g, "")
-      : type === "audio"
-      ? "audio.mp3"
-      : "video.mp4";
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Error en la descarga');
+      }
 
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let fileName = type === "audio" ? "audio.mp3" : "video.mp4";
+      
+      if (url) {
+        try {
+          const videoId = url.split('v=')[1].split('&')[0];
+          const response = await fetch(`https://www.youtube.com/oembed?url=http://www.youtube.com/watch?v=${videoId}&format=json`);
+          const data = await response.json();
+          fileName = `${data.title}.${type === "audio" ? "mp3" : "mp4"}`.replace(/[^\w\s]/gi, '');
+        } catch (err) {
+          console.log('Error getting video title, using default name');
+        }
+      }
 
-    setLoading(false);
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Error en la descarga:', err);
+      setError(err.message || t("error"));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -76,7 +97,6 @@ const App = () => {
         </button>
       </div>
 
-      {/* Footer agregado para mejorar SEO */}
       <footer className="footer">
         <div className="footer-content">
           <p>{t("footer")}</p>
