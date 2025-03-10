@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import "./App.css"; 
 import './config/i18n.js'; 
 
-const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const App = () => {
   const { t } = useTranslation();
