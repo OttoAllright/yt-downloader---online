@@ -5,12 +5,58 @@ import ytdl from '@distube/ytdl-core';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { FRONTEND_URL } from './logic/const.js';
+import { youtubeCookies } from './config/youtube-cookies.js';
 
 const PORT = process.env.PORT || 3000;
 const app = express();
 
 // Configurar ffmpeg con el binario estático
 ffmpeg.setFfmpegPath(ffmpegStatic);
+
+// Lista de proxies HTTPS verificados
+const proxyList = [
+  { uri: 'http://158.69.53.132:9300' },
+  { uri: 'http://51.159.115.233:3128' },
+  { uri: 'http://167.71.5.83:3128' },
+  { uri: 'http://178.62.92.133:8080' },
+  { uri: 'http://159.65.77.168:8585' }
+];
+
+// Lista de User Agents realistas
+const userAgents = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Edge/122.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+];
+
+// Función para obtener un proxy aleatorio
+const getRandomProxy = () => {
+  return proxyList[Math.floor(Math.random() * proxyList.length)];
+};
+
+// Función para obtener un agente con proxy y headers personalizados
+const getCustomAgent = () => {
+  const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+  
+  // Obtener un proxy aleatorio
+  const proxy = getRandomProxy();
+  console.log('Usando proxy:', proxy.uri);
+
+  // Actualizar las cookies con el timestamp actual
+  const updatedCookies = youtubeCookies.map(cookie => ({
+    ...cookie,
+    expirationDate: Date.now() + 86400000 // 24 horas
+  }));
+
+  // Crear agente con proxy y cookies
+  return ytdl.createProxyAgent(proxy, updatedCookies);
+};
+
+// Función para agregar un retraso aleatorio
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Configurar CORS
 app.use(cors({
@@ -31,16 +77,34 @@ app.post('/download/audio', async (req, res) => {
       throw new Error('URL no proporcionada');
     }
 
+    // Agregar un pequeño retraso aleatorio
+    await delay(Math.random() * 2000 + 1000);
+
+    // Crear un nuevo agente para esta solicitud
+    const agent = getCustomAgent();
+
     console.log('Obteniendo información del video...');
-    const info = await ytdl.getInfo(url);
+    const info = await ytdl.getInfo(url, {
+      agent,
+      playerClients: ["WEB_EMBEDDED", "IOS", "ANDROID", "TV"]
+    });
+    
     const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
     const tempFileName = `temp_${Date.now()}.mp3`;
     outputFileName = tempFileName;
     console.log('Nombre del archivo:', outputFileName);
 
+    // Agregar otro pequeño retraso aleatorio
+    await delay(Math.random() * 1000 + 500);
+
+    // Crear un nuevo agente para la descarga
+    const downloadAgent = getCustomAgent();
+
     const audioStream = ytdl(url, { 
       quality: 'highestaudio',
-      filter: 'audioonly'
+      filter: 'audioonly',
+      agent: downloadAgent,
+      playerClients: ["WEB_EMBEDDED", "IOS", "ANDROID", "TV"]
     });
 
     console.log('Iniciando conversión de audio...');
@@ -91,8 +155,18 @@ app.post('/download/video', async (req, res) => {
       throw new Error('URL no proporcionada');
     }
 
+    // Agregar un pequeño retraso aleatorio
+    await delay(Math.random() * 2000 + 1000);
+
+    // Crear un nuevo agente para esta solicitud
+    const agent = getCustomAgent();
+
     console.log('Obteniendo información del video...');
-    const info = await ytdl.getInfo(url);
+    const info = await ytdl.getInfo(url, {
+      agent,
+      playerClients: ["WEB_EMBEDDED", "IOS", "ANDROID", "TV"]
+    });
+    
     const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
     const timestamp = Date.now();
     outputFileName = `temp_${timestamp}.mp4`;
@@ -100,14 +174,25 @@ app.post('/download/video', async (req, res) => {
     audioPath = `temp_${timestamp}_audio.mp3`;
     console.log('Nombre del archivo final:', outputFileName);
 
+    // Agregar otro pequeño retraso aleatorio
+    await delay(Math.random() * 1000 + 500);
+
+    // Crear nuevos agentes para las descargas
+    const videoAgent = getCustomAgent();
+    const audioAgent = getCustomAgent();
+
     const videoStream = ytdl(url, { 
       quality: 'highestvideo',
-      filter: 'videoonly'
+      filter: 'videoonly',
+      agent: videoAgent,
+      playerClients: ["WEB_EMBEDDED", "IOS", "ANDROID", "TV"]
     });
 
     const audioStream = ytdl(url, { 
       quality: 'highestaudio',
-      filter: 'audioonly'
+      filter: 'audioonly',
+      agent: audioAgent,
+      playerClients: ["WEB_EMBEDDED", "IOS", "ANDROID", "TV"]
     });
 
     // Función de limpieza mejorada
