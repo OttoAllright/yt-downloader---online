@@ -19,10 +19,6 @@ app.post('/download/audio', async (req, res) => {
   let outputFileName;
 
   try {
-    if (!url) {
-      throw new Error('URL no proporcionada');
-    }
-
     console.log('Obteniendo información del video...');
     const info = await ytdl.getInfo(url);
     const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
