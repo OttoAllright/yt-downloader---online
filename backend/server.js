@@ -3,7 +3,9 @@ import cors from 'cors';
 import fs from 'fs';
 import ytdl from '@distube/ytdl-core';
 import ffmpeg from 'fluent-ffmpeg';
-import { FRONTEND_URL,PORT } from './logic/const.js';
+import { FRONTEND_URL} from './logic/const.js';
+
+const PORT = process.env.PORT || 3000;
 
 const app = express();
 
