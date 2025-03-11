@@ -15,11 +15,9 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 
 // Lista de proxies HTTPS verificados
 const proxyList = [
-  { uri: 'http://158.69.53.132:9300' },
-  { uri: 'http://51.159.115.233:3128' },
-  { uri: 'http://167.71.5.83:3128' },
-  { uri: 'http://178.62.92.133:8080' },
-  { uri: 'http://159.65.77.168:8585' }
+  { uri: 'http://proxy.scrapingbee.com:8886', timeout: 5000 },
+  { uri: 'http://proxy.webshare.io:80', timeout: 5000 },
+  { uri: 'http://proxy.packetstream.io:31112', timeout: 5000 }
 ];
 
 // Lista de User Agents realistas
@@ -32,17 +30,52 @@ const userAgents = [
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 ];
 
-// Función para obtener un proxy aleatorio
-const getRandomProxy = () => {
-  return proxyList[Math.floor(Math.random() * proxyList.length)];
+let lastWorkingProxy = null;
+
+// Función para verificar si un proxy está funcionando
+const testProxy = async (proxy) => {
+  try {
+    const agent = ytdl.createProxyAgent(proxy);
+    const testUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    await ytdl.getBasicInfo(testUrl, { agent, timeout: proxy.timeout });
+    return true;
+  } catch (error) {
+    console.error(`Proxy ${proxy.uri} falló:`, error.message);
+    return false;
+  }
+};
+
+// Función para obtener un proxy funcional
+const getWorkingProxy = async () => {
+  // Primero intentar con el último proxy que funcionó
+  if (lastWorkingProxy && await testProxy(lastWorkingProxy)) {
+    return lastWorkingProxy;
+  }
+
+  // Si no hay proxy funcional, probar la lista completa
+  for (const proxy of proxyList) {
+    if (await testProxy(proxy)) {
+      lastWorkingProxy = proxy;
+      return proxy;
+    }
+  }
+
+  // Si ningún proxy funciona, retornar null
+  return null;
 };
 
 // Función para obtener un agente con proxy y headers personalizados
-const getCustomAgent = () => {
+const getCustomAgent = async () => {
   const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
   
-  // Obtener un proxy aleatorio
-  const proxy = getRandomProxy();
+  // Intentar obtener un proxy funcional
+  const proxy = await getWorkingProxy();
+  
+  if (!proxy) {
+    console.log('No se encontró ningún proxy funcional, intentando sin proxy...');
+    return ytdl.createAgent();
+  }
+
   console.log('Usando proxy:', proxy.uri);
 
   // Actualizar las cookies con el timestamp actual
@@ -81,7 +114,7 @@ app.post('/download/audio', async (req, res) => {
     await delay(Math.random() * 2000 + 1000);
 
     // Crear un nuevo agente para esta solicitud
-    const agent = getCustomAgent();
+    const agent = await getCustomAgent();
 
     console.log('Obteniendo información del video...');
     const info = await ytdl.getInfo(url, {
@@ -98,7 +131,7 @@ app.post('/download/audio', async (req, res) => {
     await delay(Math.random() * 1000 + 500);
 
     // Crear un nuevo agente para la descarga
-    const downloadAgent = getCustomAgent();
+    const downloadAgent = await getCustomAgent();
 
     const audioStream = ytdl(url, { 
       quality: 'highestaudio',
@@ -159,7 +192,7 @@ app.post('/download/video', async (req, res) => {
     await delay(Math.random() * 2000 + 1000);
 
     // Crear un nuevo agente para esta solicitud
-    const agent = getCustomAgent();
+    const agent = await getCustomAgent();
 
     console.log('Obteniendo información del video...');
     const info = await ytdl.getInfo(url, {
@@ -178,8 +211,8 @@ app.post('/download/video', async (req, res) => {
     await delay(Math.random() * 1000 + 500);
 
     // Crear nuevos agentes para las descargas
-    const videoAgent = getCustomAgent();
-    const audioAgent = getCustomAgent();
+    const videoAgent = await getCustomAgent();
+    const audioAgent = await getCustomAgent();
 
     const videoStream = ytdl(url, { 
       quality: 'highestvideo',
