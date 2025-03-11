@@ -3,14 +3,20 @@ import cors from 'cors';
 import fs from 'fs';
 import ytdl from '@distube/ytdl-core';
 import ffmpeg from 'fluent-ffmpeg';
-import { FRONTEND_URL} from './logic/const.js';
+import ffmpegStatic from 'ffmpeg-static';
+import { FRONTEND_URL } from './logic/const.js';
 
 const PORT = process.env.PORT || 3000;
-
 const app = express();
 
+// Configurar ffmpeg con el binario estático
+ffmpeg.setFfmpegPath(ffmpegStatic);
+
+// Configurar CORS
 app.use(cors({
- 
+  origin: FRONTEND_URL || 'http://localhost:5173',
+  methods: ['GET', 'POST'],
+  credentials: true
 }));
 app.use(express.json());
 
@@ -21,37 +27,29 @@ app.post('/download/audio', async (req, res) => {
   let outputFileName;
 
   try {
+    if (!url) {
+      throw new Error('URL no proporcionada');
+    }
+
     console.log('Obteniendo información del video...');
     const info = await ytdl.getInfo(url);
     const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
-    const tempFileName = `${title}_${Date.now()}.mp3`;
+    const tempFileName = `temp_${Date.now()}.mp3`;
     outputFileName = tempFileName;
     console.log('Nombre del archivo:', outputFileName);
 
     const audioStream = ytdl(url, { 
       quality: 'highestaudio',
-      filter: 'audioonly',
-      requestOptions: {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        }
-      }
+      filter: 'audioonly'
     });
 
     console.log('Iniciando conversión de audio...');
     ffmpeg(audioStream)
-      .audioBitrate(256)
-      .audioCodec('libmp3lame')
-      .audioChannels(2)
-      .audioFrequency(44100)
-      .format('mp3')
+      .toFormat('mp3')
+      .audioBitrate('192k')
       .on('error', (err) => {
         console.error('Error en la conversión:', err);
-        if (outputFileName && fs.existsSync(outputFileName)) {
-          fs.unlinkSync(outputFileName);
-        }
+        cleanup(outputFileName);
         if (!res.headersSent) {
           res.status(500).send('Error al procesar el archivo de audio.');
         }
@@ -63,9 +61,7 @@ app.post('/download/audio', async (req, res) => {
         console.log('Conversión completada, enviando archivo...');
         if (fs.existsSync(outputFileName)) {
           res.download(outputFileName, `${title}.mp3`, (err) => {
-            if (fs.existsSync(outputFileName)) {
-              fs.unlinkSync(outputFileName);
-            }
+            cleanup(outputFileName);
             if (err) {
               console.error('Error al enviar el archivo:', err);
             }
@@ -79,9 +75,7 @@ app.post('/download/audio', async (req, res) => {
       .save(outputFileName);
   } catch (error) {
     console.error('Error:', error);
-    if (outputFileName && fs.existsSync(outputFileName)) {
-      fs.unlinkSync(outputFileName);
-    }
+    cleanup(outputFileName);
     if (!res.headersSent) {
       res.status(500).send(error.message || 'Error al procesar la solicitud.');
     }
@@ -100,37 +94,47 @@ app.post('/download/video', async (req, res) => {
     console.log('Obteniendo información del video...');
     const info = await ytdl.getInfo(url);
     const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
-    outputFileName = `${title}_${Date.now()}.mp4`;
-    videoPath = `${title}_${Date.now()}_video.mp4`;
-    audioPath = `${title}_${Date.now()}_audio.mp3`;
+    const timestamp = Date.now();
+    outputFileName = `temp_${timestamp}.mp4`;
+    videoPath = `temp_${timestamp}_video.mp4`;
+    audioPath = `temp_${timestamp}_audio.mp3`;
     console.log('Nombre del archivo final:', outputFileName);
 
     const videoStream = ytdl(url, { 
       quality: 'highestvideo',
-      filter: 'videoonly',
-      requestOptions: {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        }
-      }
+      filter: 'videoonly'
     });
 
     const audioStream = ytdl(url, { 
       quality: 'highestaudio',
-      filter: 'audioonly',
-      requestOptions: {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        }
-      }
+      filter: 'audioonly'
     });
 
-    videoStream.on('error', cleanup);
-    audioStream.on('error', cleanup);
+    // Función de limpieza mejorada
+    const cleanup = (error) => {
+      console.log('Limpiando archivos temporales...');
+      [videoPath, audioPath, outputFileName].forEach(file => {
+        if (file && fs.existsSync(file)) {
+          try {
+            fs.unlinkSync(file);
+          } catch (err) {
+            console.error(`Error al eliminar ${file}:`, err);
+          }
+        }
+      });
+      if (error && !res.headersSent) {
+        res.status(500).send('Error al procesar los archivos.');
+      }
+    };
+
+    // Manejo de errores mejorado
+    const handleError = (stream, error) => {
+      console.error('Error en stream:', error);
+      cleanup(error);
+    };
+
+    videoStream.on('error', handleError);
+    audioStream.on('error', handleError);
 
     console.log('Guardando streams de video y audio...');
     const videoWriteStream = fs.createWriteStream(videoPath);
@@ -142,8 +146,8 @@ app.post('/download/video', async (req, res) => {
     let videoFinished = false;
     let audioFinished = false;
 
-    videoWriteStream.on('error', cleanup);
-    audioWriteStream.on('error', cleanup);
+    videoWriteStream.on('error', handleError);
+    audioWriteStream.on('error', handleError);
 
     videoWriteStream.on('close', () => {
       console.log('Video descargado');
@@ -157,19 +161,6 @@ app.post('/download/video', async (req, res) => {
       if (videoFinished) combineStreams();
     });
 
-    function cleanup(error) {
-      console.log('Limpiando archivos temporales...');
-      if (videoPath && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
-      if (audioPath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
-      if (outputFileName && fs.existsSync(outputFileName)) fs.unlinkSync(outputFileName);
-      if (error) {
-        console.error('Error:', error);
-        if (!res.headersSent) {
-          res.status(500).send('Error al procesar los archivos.');
-        }
-      }
-    }
-
     function combineStreams() {
       console.log('Combinando streams de video y audio...');
       ffmpeg()
@@ -177,9 +168,6 @@ app.post('/download/video', async (req, res) => {
         .input(audioPath)
         .videoCodec('libx264')
         .audioCodec('aac')
-        .audioBitrate(256)
-        .audioChannels(2)
-        .audioFrequency(44100)
         .outputOptions('-preset ultrafast')
         .on('progress', (progress) => {
           console.log('Progreso de combinación:', progress.percent, '%');
@@ -201,8 +189,22 @@ app.post('/download/video', async (req, res) => {
         .save(outputFileName);
     }
   } catch (error) {
+    console.error('Error:', error);
     cleanup(error);
   }
 });
 
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+// Función de limpieza global
+function cleanup(file) {
+  if (file && fs.existsSync(file)) {
+    try {
+      fs.unlinkSync(file);
+    } catch (err) {
+      console.error(`Error al eliminar ${file}:`, err);
+    }
+  }
+}
+
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+});

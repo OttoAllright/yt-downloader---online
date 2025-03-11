@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import "./App.css"; 
 import './config/i18n.js'; 
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3000";
 
 const App = () => {
   const { t } = useTranslation();
@@ -24,7 +24,7 @@ const App = () => {
       const endpoint = type === "audio" ? "audio" : "video";
       console.log(`Iniciando descarga de ${endpoint}...`);
 
-      const response = await fetch(`${URL}/download/${endpoint}`, {
+      const response = await fetch(`${BACKEND_URL}/download/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -34,7 +34,7 @@ const App = () => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || 'Error en la descarga');
+        throw new Error(errorText || t("error"));
       }
 
       const blob = await response.blob();
@@ -76,7 +76,7 @@ const App = () => {
         type="text"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
-        placeholder="https://www.youtube.com/watch?v=..."
+        placeholder={t("placeholder")}
         className="input"
       />
       {error && <p className="error">{error}</p>}
@@ -107,7 +107,7 @@ const App = () => {
           </p>
           <p>
             {t("followUs")} 
-            <a href="https://instagram.com" className="footer-link">Instagram</a>
+            <a href="https://instagram.com" className="footer-link">{t("instagram")}</a>
           </p>
         </div>
       </footer>
